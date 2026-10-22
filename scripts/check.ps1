@@ -46,10 +46,16 @@ try {
         throw 'ビルドに失敗しました。'
     }
 
-    & .\bin\envfacts.exe --version
+    $actualVersion = & .\bin\envfacts.exe --version
     if ($LASTEXITCODE -ne 0) {
         throw 'ビルドした実行ファイルの起動に失敗しました。'
     }
+    $versionSource = Get-Content -LiteralPath 'internal/cli/version.go' -Raw
+    $versionMatch = [regex]::Match($versionSource, 'const Version = "([0-9]+\.[0-9]+\.[0-9]+)"')
+    if (-not $versionMatch.Success -or $actualVersion -cne ('envfacts ' + $versionMatch.Groups[1].Value)) {
+        throw '実行ファイルの版番号が正本と一致しません。'
+    }
+    Write-Output $actualVersion
 
     Write-Output '整形・静的検査・テスト・ビルド・起動確認が完了しました。'
 }

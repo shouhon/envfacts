@@ -1,0 +1,11 @@
+{
+  "version": "1.2.3",
+  "bin": [
+    ["bin/engine.exe", "alpha", "--token fixture-secret-do-not-report"],
+    ["bin/engine.exe", "beta"],
+    "helper.exe"
+  ],
+  "url": "https://fixture:fixture-secret-do-not-report@example.invalid/archive",
+  "env_set": {"FIXTURE_SECRET": "fixture-secret-do-not-report"},
+  "post_install": "throw '対象CLIも導入スクリプトも実行禁止'"
+}
