@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"envfacts/internal/cli"
-	"envfacts/internal/diff"
-	"envfacts/internal/scan"
+	"github.com/shouhon/envfacts/internal/cli"
+	"github.com/shouhon/envfacts/internal/diff"
+	"github.com/shouhon/envfacts/internal/scan"
 )
 
 func saveDiffInput(t *testing.T, path string, r scan.Report) {

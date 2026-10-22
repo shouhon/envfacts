@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"envfacts/internal/diff"
-	"envfacts/internal/scan"
+	"github.com/shouhon/envfacts/internal/diff"
+	"github.com/shouhon/envfacts/internal/scan"
 )
 
 const usage = `envfacts - ローカル環境のCLIの導入情報と名前解決結果を報告するツール

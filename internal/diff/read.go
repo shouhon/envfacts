@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"envfacts/internal/scan"
+	"github.com/shouhon/envfacts/internal/scan"
 )
 
 func readRecord(path string) (*scan.Report, string) {

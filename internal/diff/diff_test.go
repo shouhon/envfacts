@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"envfacts/internal/diff"
-	"envfacts/internal/scan"
+	"github.com/shouhon/envfacts/internal/diff"
+	"github.com/shouhon/envfacts/internal/scan"
 )
 
 func ptr(s string) *string { return &s }

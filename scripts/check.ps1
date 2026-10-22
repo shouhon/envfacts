@@ -41,7 +41,7 @@ try {
     }
 
     New-Item -ItemType Directory -Path 'bin' -Force | Out-Null
-    & go build -trimpath -o bin/envfacts.exe ./cmd/envfacts
+    & go build -trimpath -buildvcs=false -o bin/envfacts.exe ./cmd/envfacts
     if ($LASTEXITCODE -ne 0) {
         throw 'ビルドに失敗しました。'
     }

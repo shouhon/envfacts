@@ -3,7 +3,7 @@ package diff
 import (
 	"time"
 
-	"envfacts/internal/scan"
+	"github.com/shouhon/envfacts/internal/scan"
 )
 
 // Report は保存済みの調査記録だけから得た比較結果を表す。

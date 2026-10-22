@@ -3,7 +3,7 @@
 ## 参照先
 
 - 製品の目的、対象外、出力・終了コード、受入条件は [docs/requirements.md](docs/requirements.md) を正本とする。
-- 開発手順は [README.md](README.md)、実装順序と現在地は [docs/development-plan.md](docs/development-plan.md) を参照する。
+- 利用方法は [README.md](README.md)、開発手順は [docs/development.md](docs/development.md)、実装順序と現在地は [docs/development-plan.md](docs/development-plan.md) を参照する。
 - 要件定義書の移動を理由に本文を改稿しない。製品仕様を変える場合は別途その変更を明示する。
 
 ## 実装と検証
@@ -27,6 +27,7 @@
 - JSONの `schema_version` は記録形式の互換性を示す別の番号であり、CLI版と一律に揃えない。初回の記録形式は要件定義書8章に従い、M2で実装する。
 - 作業開始時の `Version` を比較基準にし、完了時に変更内容と更新種別を照合する。検証手順を成功させ、`bin/envfacts.exe --version` と正本の一致を確認する。テストでも版番号の出力が正本を参照していることを確認する。
 - ローカルの生成先は `bin/envfacts.exe`。正式な配布物の命名を決める際は正本から番号を取得する。Gitを導入した後はコミットを変更の識別に使い、製品の番号と区別する。同じ公開番号で別内容に差し替えない。
+- 配布先は `shouhon/envfacts` のGitHubリポジトリとGitHub Releases、ライセンスはMITとする。Windows AMD64用ZIPとScoop用配布定義の作成・公開は [docs/releasing.md](docs/releasing.md) に従う。配布定義の番号・URL・SHA-256は `scripts/package-release.ps1` で正本と実際のZIPから生成し、`bucket/envfacts.json` へ反映する。配布経路の変更は互換性を変えない場合パッチ更新とする。
 - 版番号の変更からタグ、公開、配布、署名の認可を推定しない。未決定の公開先やライセンスを作業者の推測で追加しない。
 
 ## Git操作

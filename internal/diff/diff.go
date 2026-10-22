@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"envfacts/internal/scan"
+	"github.com/shouhon/envfacts/internal/scan"
 )
 
 // Files は指定された2つの記録だけを読み、導入先やPATHの再調査を行わない。

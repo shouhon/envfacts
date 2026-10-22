@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"envfacts/internal/cli"
+	"github.com/shouhon/envfacts/internal/cli"
 )
 
 func main() {

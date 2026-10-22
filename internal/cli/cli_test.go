@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"envfacts/internal/cli"
-	"envfacts/internal/scan"
+	"github.com/shouhon/envfacts/internal/cli"
+	"github.com/shouhon/envfacts/internal/scan"
 )
 
 func TestVersionWritesOnlyToStdout(t *testing.T) {

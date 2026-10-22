@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"envfacts/internal/diff"
+	"github.com/shouhon/envfacts/internal/diff"
 )
 
 func parseDiff(args []string) (string, string, bool) {
