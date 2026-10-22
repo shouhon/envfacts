@@ -10,7 +10,7 @@ if (-not $IsWindows) {
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Push-Location -LiteralPath $projectRoot
 try {
-    $packageDirectories = @(& go list -f '{{.Dir}}' ./...)
+    $packageDirectories = @(& go list -f '{{.Dir}}' ./... ./testdata/execution-probe)
     if ($LASTEXITCODE -ne 0) {
         throw 'Go パッケージの一覧を取得できませんでした。'
     }
@@ -30,7 +30,7 @@ try {
         throw '未整形のファイルがあります。表示されたファイルに gofmt -w を実行してください。'
     }
 
-    & go vet ./...
+    & go vet ./... ./testdata/execution-probe
     if ($LASTEXITCODE -ne 0) {
         throw 'go vet に失敗しました。'
     }
@@ -57,7 +57,9 @@ try {
     }
     Write-Output $actualVersion
 
-    Write-Output '整形・静的検査・テスト・ビルド・起動確認が完了しました。'
+    & (Join-Path $PSScriptRoot 'acceptance.ps1')
+
+    Write-Output '整形・静的検査・テスト・ビルド・起動・受入確認が完了しました。'
 }
 finally {
     Pop-Location

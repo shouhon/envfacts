@@ -42,7 +42,7 @@ go build -trimpath -o bin/envfacts.exe ./cmd/envfacts
 
 終了コードは、調査完了・比較完了で差分なしが `0`、明示した名前がPATHから見つからない場合・差分ありが `1`、調査・保存・比較・出力が不完全な場合が `2`、引数の誤りが `64` です。不足・差分と不完全が同時に起きた場合は `2` を優先します。引数が誤っていても `--json` を認識できればJSONで説明します。
 
-Scoopのスクリプト型shim、`env_add_path` からのコマンド列挙、`no_junction` 設定などは未対応です。未対応の情報がある場合は、読めた事実と `issues` を返し、調査成功として扱いません。製品全体の受入確認は完了していません。
+Scoopのスクリプト型shim、`env_add_path` からのコマンド列挙、`no_junction` 設定などは未対応です。未対応の情報がある場合は、読めた事実と `issues` を返し、調査成功として扱いません。対応済み形式の初版受入確認はWindows AMD64の模擬環境で完了しました。実環境全体・Windows ARM64・配布経路は未検証です。
 
 終了コードを確認する場合はビルドした実行ファイルを使ってください。`go run` は起動したプログラムの終了コードをそのまま返すとは限りません。
 
@@ -52,7 +52,9 @@ Scoopのスクリプト型shim、`env_add_path` からのコマンド列挙、`n
 pwsh -NoProfile -File ./scripts/check.ps1
 ```
 
-検証手順の正本は [scripts/check.ps1](scripts/check.ps1) です。`gofmt -l` による整形確認、`go vet ./...`、`go test ./...`、上記のビルド、生成した実行ファイルの `--version` と正本の一致確認を順に実行し、失敗した時点で停止します。起動確認は `--help` でも行ってください。
+検証手順の正本は [scripts/check.ps1](scripts/check.ps1) です。`gofmt -l` による整形確認、`go vet`、`go test ./...`、上記のビルド、生成した実行ファイルの `--version` と正本の一致確認、[受入手順](scripts/acceptance.ps1) を順に実行し、失敗した時点で停止します。整形と静的検査には `testdata/execution-probe/` の受入確認専用コードも含めます。
+
+受入手順は `bin/envfacts.exe` を模擬の導入先・junction・PATHで起動し、収集から保存・比較までを確認します。各操作の前後でファイル・更新日時・属性・リンク先を照合し、対象CLIの非実行、余分な模擬値の非出力、標準出力・標準エラー・終了コードも検査します。起動されたら印を残す模擬実行ファイルをGoで作り、検出できることを先に確認してからshim等に配置します。模擬環境と記録は `.cache/acceptance-<一意な識別子>/` に作成し、その実行で作ったディレクトリだけを終了時に除去します。実際のScoop導入先や環境設定は変更しません。ビルド済みの実行ファイルの受入確認だけを繰り返す場合は `pwsh -NoProfile -File ./scripts/acceptance.ps1` を使えます。この手順単独でも模擬実行ファイルのビルドにGoを使用します。
 
 整形が必要なファイルには `gofmt -w <ファイル>` を実行します。Goのビルド・テストでは通常の開発用キャッシュと一時ファイルを使用します。これらは、製品の調査処理が環境を書き換えてよいことを意味しません。
 
@@ -68,6 +70,8 @@ docs/development-plan.md  実装順序、受入確認、未決定事項
 docs/scan-format.md   対応する収集方式、JSONの識別・優先順・未確認の扱い
 docs/diff-format.md   記録比較の入力検査、共通範囲、変更と不完全の扱い
 scripts/check.ps1     開発時の検証手順
+scripts/acceptance.ps1  実行ファイルで要件7章を確認する模擬環境の受入手順
+testdata/execution-probe/  誤起動の検出に使う模擬CLIのソース。製品には含めない
 AGENTS.md             変更時の制約と版番号の更新規則
 go.mod                モジュール名とGoの最低版
 bin/                  ローカルの実行ファイル。Git管理対象外
