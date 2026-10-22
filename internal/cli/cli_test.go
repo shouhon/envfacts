@@ -37,7 +37,7 @@ func TestUnsupportedArgumentsDoNotReportSuccess(t *testing.T) {
 		{name: "未知のオプション", args: []string{"--unknown"}},
 		{name: "余分な引数", args: []string{"--version", "extra"}},
 		{name: "調査の不正な引数", args: []string{"scan", "--unknown"}},
-		{name: "未実装の比較", args: []string{"diff"}},
+		{name: "比較の記録指定なし", args: []string{"diff"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

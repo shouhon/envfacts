@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"envfacts/internal/diff"
 	"envfacts/internal/scan"
 )
 
@@ -17,6 +18,7 @@ const usage = `envfacts - ローカル環境のCLIの導入情報と名前解決
 
 使い方:
   envfacts scan [--command <名前> ...] [--json] [--output <ファイル>]
+  envfacts diff --before <記録> --after <記録> [--json]
   envfacts --help       日本語の使い方と調査範囲を表示する
   envfacts --version    版番号を表示する
 
@@ -25,7 +27,12 @@ scanのオプション:
   --json               標準出力にJSON記録を1件表示する
   --output <ファイル>  JSON記録を保存する。既存ファイルは上書きしない
   名前の指定がなければ、Scoopの導入情報で公開されたコマンドを探索する。
-  diffは未実装です。
+
+diffのオプション:
+  --before <記録>      比較前のscan JSON記録
+  --after <記録>       比較後のscan JSON記録
+  --json               標準出力にJSON比較結果を1件表示する
+  保存済みの記録だけを比較します。再調査や入力ファイルの変更は行いません。
 
 調査範囲:
   Windows 11・PowerShellを対象に、Scoopの利用者単位・全利用者共通の
@@ -36,7 +43,7 @@ scanのオプション:
   未対応として報告します。
 
 終了コード:
-  0 調査完了、1 明示した名前の不足、2 調査・保存・出力が不完全、64 引数の誤り
+  0 調査完了・差分なし、1 明示した名前の不足・差分あり、2 不完全、64 引数の誤り
 `
 
 // Run は引数を処理し、指定された出力先へ書き込み、終了コードを返す。
@@ -57,11 +64,21 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if args[0] == "scan" || args[0] == "diff" {
 		command = args[0]
 	}
+	if command == "diff" {
+		before, after, valid := parseDiff(args)
+		if !valid {
+			r := diff.NewReport()
+			r.Status = "invalid_arguments"
+			r.Issues = append(r.Issues, scan.Issue{Code: "invalid_arguments", Message: "引数が不正です。使い方: envfacts --help", Source: "arguments"})
+			return writeDiffReport(r, jsonOutput, stdout, stderr)
+		}
+		return writeDiffReport(diff.Files(before, after), jsonOutput, stdout, stderr)
+	}
 	names, outputPath, valid := parseScan(args)
 	if !valid {
 		r := scan.NewReport(command)
 		r.Status = "invalid_arguments"
-		r.Issues = append(r.Issues, scan.Issue{Code: "invalid_arguments", Message: "引数が不正、または未実装のコマンドです。使い方: envfacts --help", Source: "arguments"})
+		r.Issues = append(r.Issues, scan.Issue{Code: "invalid_arguments", Message: "引数が不正です。使い方: envfacts --help", Source: "arguments"})
 		return writeReport(r, jsonOutput, stdout, stderr)
 	}
 	r := scan.Scan(names)

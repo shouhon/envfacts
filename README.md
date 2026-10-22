@@ -2,7 +2,7 @@
 
 ローカル環境に導入されたCLIと、PATHから見つかる実行ファイルを整理して報告する、Windows向けの非対話型コマンドです。製品仕様の正本は [要件定義書](docs/requirements.md) です。
 
-`scan` でScoopの保存済み導入情報とPATHの候補を調べ、日本語表示またはJSON記録を出力できます。記録比較の `diff` は未実装です。対応するローカル情報の形式と未対応範囲は [収集方式と記録形式](docs/scan-format.md)、実装順序と完了条件は [開発計画](docs/development-plan.md) を参照してください。
+`scan` でScoopの保存済み導入情報とPATHの候補を調べ、日本語表示またはJSON記録を出力できます。`diff` は保存済みの記録だけを比較します。対応するローカル情報の形式と未対応範囲は [収集方式と記録形式](docs/scan-format.md)、比較の取り決めは [記録比較](docs/diff-format.md)、実装順序と完了条件は [開発計画](docs/development-plan.md) を参照してください。
 
 ## 開発環境
 
@@ -30,13 +30,17 @@ go build -trimpath -o bin/envfacts.exe ./cmd/envfacts
 .\bin\envfacts.exe scan
 .\bin\envfacts.exe scan --command git --command python --json
 .\bin\envfacts.exe scan --json --output .\environment.json
+.\bin\envfacts.exe diff --before .\before.json --after .\after.json
+.\bin\envfacts.exe diff --before .\before.json --after .\after.json --json
 ```
 
 引数なしでは使い方を表示します。`scan` の名前を省略すると、Scoopの導入済みマニフェストの `bin` に公開された名前を探索します。`--command` を指定すると、その名前だけを探索します。Scoop以外のCLIも指定できますが、導入版は推測しません。対象CLIやScoopは実行せず、起動・認証・ネットワーク接続は常に未確認です。
 
 `--json` は標準出力にJSONオブジェクト1件を表示し、診断は標準エラーへ出します。`--output` は同じJSON形式を新規ファイルへ保存します。既存ファイルの上書きや親ディレクトリの作成は行いません。保存先を指定しなければファイルを作成しません。実環境の記録にはローカルのパスが含まれるため、Gitへ追加しないでください。
 
-終了コードは、調査完了が `0`、明示した名前がPATHから見つからない場合が `1`、調査・保存・出力が不完全な場合が `2`、引数の誤りが `64` です。不足と不完全が同時に起きた場合は `2` を優先します。引数が誤っていても `--json` を認識できればJSONで説明します。
+`diff` は記録日時や配列の並び順を除き、追加・削除・導入版・実体・優先順などの変更を報告します。調査範囲が異なる場合は共通範囲だけを比較し、版不明や未読範囲があれば不完全とします。再調査や入力ファイルの変更は行いません。
+
+終了コードは、調査完了・比較完了で差分なしが `0`、明示した名前がPATHから見つからない場合・差分ありが `1`、調査・保存・比較・出力が不完全な場合が `2`、引数の誤りが `64` です。不足・差分と不完全が同時に起きた場合は `2` を優先します。引数が誤っていても `--json` を認識できればJSONで説明します。
 
 Scoopのスクリプト型shim、`env_add_path` からのコマンド列挙、`no_junction` 設定などは未対応です。未対応の情報がある場合は、読めた事実と `issues` を返し、調査成功として扱いません。製品全体の受入確認は完了していません。
 
@@ -58,9 +62,11 @@ pwsh -NoProfile -File ./scripts/check.ps1
 cmd/envfacts/          実行ファイルの入口と終了コードの反映
 internal/cli/         引数、出力先、版番号とそのテスト
 internal/scan/        Scoopのローカル情報、PATH探索、JSON記録の型とテスト
+internal/diff/        保存済み記録の検査、共通範囲と変更の比較、そのテスト
 docs/requirements.md  移動前の内容を保持した要件定義書
 docs/development-plan.md  実装順序、受入確認、未決定事項
 docs/scan-format.md   対応する収集方式、JSONの識別・優先順・未確認の扱い
+docs/diff-format.md   記録比較の入力検査、共通範囲、変更と不完全の扱い
 scripts/check.ps1     開発時の検証手順
 AGENTS.md             変更時の制約と版番号の更新規則
 go.mod                モジュール名とGoの最低版
