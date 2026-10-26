@@ -366,12 +366,25 @@ func TestWindowsJunctionTargetsMatchInstalledVersion(t *testing.T) {
 	if output, err := exec.Command(pwsh, "-NoProfile", "-File", script, current, version).CombinedOutput(); err != nil {
 		t.Fatalf("模擬のjunctionを作成できません: %v、%s", err, output)
 	}
+	// 入力パスと参照先の表記差に備え、作成したjunctionの参照先と照合する。
+	junctionTarget, err := os.Readlink(current)
+	if err != nil {
+		t.Fatalf("模擬のjunctionの参照先を確認できません: %v", err)
+	}
 	addShim(t, user, "alpha", filepath.Join(current, "bin", "engine.exe"))
 	t.Setenv("PATH", filepath.Join(user, "shims"))
 	r := Scan(nil)
 	c := command(t, r, "alpha")
-	if r.ExitCode() != 0 || c.Version == nil || *c.Version != "1.2.3" || c.ActualPath == nil || !samePath(*c.ActualPath, filepath.Join(version, "bin", "engine.exe")) {
-		t.Fatalf("junctionを通した導入版の照合に失敗しました: %v", r.Issues)
+	actualVersion, actualPath := "", ""
+	if c.Version != nil {
+		actualVersion = *c.Version
+	}
+	if c.ActualPath != nil {
+		actualPath = *c.ActualPath
+	}
+	expectedPath := filepath.Join(junctionTarget, "bin", "engine.exe")
+	if r.ExitCode() != 0 || actualVersion != "1.2.3" || actualPath == "" || !samePath(actualPath, expectedPath) {
+		t.Fatalf("junctionを通した導入版の照合に失敗しました: 版=%q、実体=%q、期待=%q、問題=%v", actualVersion, actualPath, expectedPath, r.Issues)
 	}
 	t.Setenv("PATH", filepath.Join(current, "bin"))
 	r = Scan([]string{"engine"})
