@@ -68,7 +68,7 @@ try {
 
     Write-Output "配布物を作成しました: $output"
     Get-ChildItem -LiteralPath $output -File | Select-Object Name, Length
-    Write-Output '公開操作は行っていません。docs/releasing.md の手順で配布定義を反映し、公開してください。'
+    Write-Output '公開操作は行っていません。自動公開と手動公開の手順は docs/releasing.md を参照してください。'
 }
 finally {
     $env:GOTOOLCHAIN = $previousToolchain

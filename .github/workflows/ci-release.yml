@@ -1,0 +1,118 @@
+name: 検査とRelease公開
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  check:
+    name: Windowsで検査・配布物作成
+    runs-on: windows-2025
+    timeout-minutes: 20
+    outputs:
+      changed: ${{ steps.plan.outputs.changed }}
+      version: ${{ steps.plan.outputs.version }}
+      artifact: ${{ steps.plan.outputs.artifact }}
+    env:
+      GOTOOLCHAIN: local
+      GOPROXY: 'off'
+      GOSUMDB: 'off'
+    steps:
+      - name: 対象コミットと履歴を取得
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: push前後の版番号を比較
+        id: plan
+        env:
+          BEFORE_COMMIT: ${{ github.event.before || github.event.pull_request.base.sha }}
+        run: |
+          . ./scripts/release-ci.ps1
+          $plan = Get-EnvfactsReleasePlan -Before $env:BEFORE_COMMIT -Commit $env:GITHUB_SHA
+          "changed=$($plan.Changed.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "version=$($plan.Version)" >> $env:GITHUB_OUTPUT
+          "artifact=release-$($plan.Version)-$env:GITHUB_SHA-$env:GITHUB_RUN_ATTEMPT" >> $env:GITHUB_OUTPUT
+          Write-Host "版番号: $($plan.PreviousVersion) → $($plan.Version)"
+
+      - name: go.modに指定したGoを準備
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: 版番号が変わらない変更を検査
+        if: steps.plan.outputs.changed != 'true'
+        run: ./scripts/check.ps1
+
+      - name: 版番号を更新した変更を検査して配布物を作成
+        if: steps.plan.outputs.changed == 'true'
+        run: ./scripts/package-release.ps1
+
+      - name: 配布物の内容とハッシュを検査
+        if: steps.plan.outputs.changed == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          . ./scripts/release-ci.ps1
+          Assert-EnvfactsReleaseFiles -Version $env:RELEASE_VERSION -Directory "bin/releases/$env:RELEASE_VERSION"
+
+      - name: 公開対象の配布物を保存
+        if: github.event_name == 'push' && steps.plan.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.plan.outputs.artifact }}
+          path: bin/releases/${{ steps.plan.outputs.version }}/
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Release公開とScoop配布定義の同期
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.check.outputs.changed == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: envfacts-release-main
+      queue: max
+      cancel-in-progress: false
+    env:
+      RELEASE_VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - name: 検証したコミットの公開手順を取得
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: 検証済みの配布物を取得
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.check.outputs.artifact }}
+          path: bin/releases/${{ needs.check.outputs.version }}/
+
+      - name: 検証したコミットをReleaseとして公開
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . ./scripts/release-ci.ps1
+          Publish-EnvfactsRelease -Version $env:RELEASE_VERSION -Commit $env:GITHUB_SHA -Directory "bin/releases/$env:RELEASE_VERSION"
+
+      - name: 公開済みのScoop配布定義をmainへ同期
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . ./scripts/release-ci.ps1
+          Sync-EnvfactsReleaseBucket -Version $env:RELEASE_VERSION -Directory "bin/releases/$env:RELEASE_VERSION"

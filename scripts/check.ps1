@@ -10,6 +10,8 @@ if (-not $IsWindows) {
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Push-Location -LiteralPath $projectRoot
 try {
+    & (Join-Path $PSScriptRoot 'test-release.ps1')
+
     $packageDirectories = @(& go list -f '{{.Dir}}' ./... ./testdata/execution-probe)
     if ($LASTEXITCODE -ne 0) {
         throw 'Go パッケージの一覧を取得できませんでした。'

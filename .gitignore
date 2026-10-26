@@ -1,4 +1,6 @@
 /bin/
 /.cache/
+/.workscope/
+/.checkstamp/
 /coverage.out
 /coverage.html

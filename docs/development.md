@@ -14,7 +14,9 @@
 pwsh -NoProfile -File ./scripts/check.ps1
 ```
 
-検証手順の正本は [scripts/check.ps1](../scripts/check.ps1) です。`gofmt -l`、`go vet`、`go test ./...`、ビルド、生成した実行ファイルの `--version` と正本の一致確認、[受入手順](../scripts/acceptance.ps1) を順に実行し、失敗した時点で停止します。整形と静的検査には `testdata/execution-probe/` の受入確認専用コードも含めます。
+検証手順の正本は [scripts/check.ps1](../scripts/check.ps1) です。Release処理の模擬確認、`gofmt -l`、`go vet`、`go test ./...`、ビルド、生成した実行ファイルの `--version` と正本の一致確認、[受入手順](../scripts/acceptance.ps1) を順に実行し、失敗した時点で停止します。整形と静的検査には `testdata/execution-probe/` の受入確認専用コードも含めます。
+
+[Release処理の確認](../scripts/test-release.ps1) は、版番号の判定、公開済みの版の保護、部分失敗からの再開、Scoop配布定義の同期を模擬のGit・GitHub CLIで検査します。実際のGitHubやScoopへは書き込みません。mainへのpushとプルリクエストではGitHub Actionsも同じ必須検査を実行します。版番号を更新したmainへのpushでは配布物作成と自動公開まで進みます。条件と復旧方法は [配布・公開手順](releasing.md) を参照してください。
 
 受入手順は `bin/envfacts.exe` を模擬の導入先・junction・PATHで起動し、収集から保存・比較までを確認します。各操作の前後でファイル・更新日時・属性・リンク先を照合し、対象CLIの非実行、余分な模擬値の非出力、標準出力・標準エラー・終了コードを検査します。実際のScoop導入先や環境設定は変更しません。
 
