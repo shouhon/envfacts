@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      before:
+        description: 公開対象の版番号へ更新する前のコミット識別子（完全な40桁）
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -36,7 +42,7 @@ jobs:
       - name: push前後の版番号を比較
         id: plan
         env:
-          BEFORE_COMMIT: ${{ github.event.before || github.event.pull_request.base.sha }}
+          BEFORE_COMMIT: ${{ inputs.before || github.event.before || github.event.pull_request.base.sha }}
         run: |
           . ./scripts/release-ci.ps1
           $plan = Get-EnvfactsReleasePlan -Before $env:BEFORE_COMMIT -Commit $env:GITHUB_SHA
@@ -68,7 +74,7 @@ jobs:
           Assert-EnvfactsReleaseFiles -Version $env:RELEASE_VERSION -Directory "bin/releases/$env:RELEASE_VERSION"
 
       - name: 公開対象の配布物を保存
-        if: github.event_name == 'push' && steps.plan.outputs.changed == 'true'
+        if: github.event_name != 'pull_request' && steps.plan.outputs.changed == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.plan.outputs.artifact }}
@@ -79,7 +85,7 @@ jobs:
   release:
     name: Release公開とScoop配布定義の同期
     needs: check
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.check.outputs.changed == 'true'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && needs.check.outputs.changed == 'true'
     runs-on: windows-2025
     timeout-minutes: 10
     permissions:
