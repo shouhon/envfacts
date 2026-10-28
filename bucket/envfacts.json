@@ -1,12 +1,12 @@
 {
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "ローカル環境のCLIの導入情報とPATHの名前解決結果を報告",
   "homepage": "https://github.com/shouhon/envfacts",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/shouhon/envfacts/releases/download/v0.3.2/envfacts-0.3.2-windows-amd64.zip",
-      "hash": "ba046bab3d8244c5c5985869c23c1db0264600949a1ab5da0d5e2df6ff29b950"
+      "url": "https://github.com/shouhon/envfacts/releases/download/v0.4.0/envfacts-0.4.0-windows-amd64.zip",
+      "hash": "ba9dfa9913aa6ca111fa1f9c1af7eadb4bb8cfb637ebe8107ad0a811aaab492f"
     }
   },
   "bin": "envfacts.exe"
