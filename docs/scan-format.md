@@ -49,6 +49,26 @@
 
 パッケージは識別子順、コマンドと関連パッケージの集合は名前・識別子順、候補は明示した優先順位順に出力します。空の一覧は `[]` とし、日時以外は同じ情報から安定した記録を作ります。M3では識別子と優先順位に基づき比較し、JSON配列の並べ替え自体は差分にしません。
 
+## 表示専用のJSON要約
+
+`scan --json-summary` は同じ収集結果から表示だけを要約します。`--command` を併用すると少数コマンドの確認に使えます。名前を指定しなければ従来と同じScoopの公開名が対象です。詳細JSONと保存記録の `schema_version: 1` は変更しません。
+
+| 項目 | 取り決め |
+| --- | --- |
+| `schema_version` / `output_format` | `1` / `summary`。表示専用で、`diff` に渡す記録とは区別する |
+| `tool` / `command` / `status` / `captured_at` | 詳細記録と同じ意味。全体が `incomplete` ならコマンドが `resolved` でも不完全のまま |
+| `coverage.scoop_roots` / `command_selection` / `requested_commands` | 詳細記録と同じ導入先・調査状態・コマンドの選択範囲 |
+| `coverage.search_path_counts` | PATHの探索先を `complete` / `absent` / `incomplete` の件数に集約。個々の探索先一覧は省く |
+| `coverage.extensions` / `excluded` | 拡張子の探索順と対象外の範囲を保持 |
+| `package_count` | 詳細記録に含むパッケージ数。`packages` 一覧は省く |
+| `commands` / `invocation_status` | 詳細記録と同じ項目・意味・順序。候補・優先順位・関連パッケージの識別子・導入版・根拠・不明理由を残し、起動は常に `not_tested` |
+| `issue_count` / `issues` | 診断の総数と、同じ `code`・`message` ごとの `count`。コード・説明の順にソートし、個別の `source` は省く |
+| `details_hint` | `--json` への切り替えと `--output` による詳細保存の案内 |
+
+標準出力はJSONオブジェクト1件です。標準エラーも同じ単位で診断を集約し、件数と詳細への案内を出します。終了コードは詳細出力と同じで、保存失敗や標準出力の失敗は `2`、引数の誤りは `64` です。`--json` との併用は引数エラーとして要約JSONを返します。`diff` では `--json-summary` を受け付けません。
+
+要約は比較用の記録ではありません。`--output` を併用した場合、指定先には要約ではなく従来の詳細記録を保存します。診断の個別の情報源や全探索先は、同じ `--command` の指定で `--json-summary` を `--json` に替えるか、保存した詳細記録で確認できます。
+
 ## 不完全な調査と保存
 
 存在しない導入先・PATHのディレクトリは `absent` とし、読取不能と区別します。読取不能・破損・未対応形式は `issues` に残し、読める範囲の収集を続けます。明示した名前の不足だけなら `missing`、不足と不完全が併存すれば `incomplete` を優先します。外部CLIの導入版が分からないことだけでは収集失敗にしません。

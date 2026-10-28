@@ -17,7 +17,7 @@ import (
 const usage = `envfacts - ローカル環境のCLIの導入情報と名前解決結果を報告するツール
 
 使い方:
-  envfacts scan [--command <名前> ...] [--json] [--output <ファイル>]
+  envfacts scan [--command <名前> ...] [--json | --json-summary] [--output <ファイル>]
   envfacts diff --before <記録> --after <記録> [--json]
   envfacts --help       日本語の使い方と調査範囲を表示する
   envfacts --version    版番号を表示する
@@ -25,8 +25,11 @@ const usage = `envfacts - ローカル環境のCLIの導入情報と名前解決
 scanのオプション:
   --command <名前>     指定した名前だけをPATHから探索する。繰り返し指定できる
   --json               標準出力にJSON記録を1件表示する
+  --json-summary       コマンドの結果と件数で集約した診断をJSONで表示する
   --output <ファイル>  JSON記録を保存する。既存ファイルは上書きしない
   名前の指定がなければ、Scoopの導入情報で公開されたコマンドを探索する。
+  --commandの指定によらず、Scoop全体の導入情報を収集する。
+  --jsonと--json-summaryは併用できない。要約でも--outputは詳細記録を保存する。
 
 diffのオプション:
   --before <記録>      比較前のscan JSON記録
@@ -59,7 +62,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
-	jsonOutput := slices.Contains(args, "--json")
+	summaryOutput := slices.Contains(args, "--json-summary")
+	jsonOutput := slices.Contains(args, "--json") || summaryOutput
 	command := ""
 	if args[0] == "scan" || args[0] == "diff" {
 		command = args[0]
@@ -79,7 +83,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		r := scan.NewReport(command)
 		r.Status = "invalid_arguments"
 		r.Issues = append(r.Issues, scan.Issue{Code: "invalid_arguments", Message: "引数が不正です。使い方: envfacts --help", Source: "arguments"})
-		return writeReport(r, jsonOutput, stdout, stderr)
+		return writeReport(r, jsonOutput, summaryOutput, stdout, stderr)
 	}
 	r := scan.Scan(names)
 	if outputPath != "" {
@@ -87,18 +91,18 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			r.AddIssue("save_failed", "JSON記録を保存できませんでした。既存ファイルの上書きや保存先ディレクトリの作成は行いません。", outputPath)
 		}
 	}
-	return writeReport(r, jsonOutput, stdout, stderr)
+	return writeReport(r, jsonOutput, summaryOutput, stdout, stderr)
 }
 
 func parseScan(args []string) ([]string, string, bool) {
-	if len(args) == 0 || args[0] != "scan" {
+	if len(args) == 0 || args[0] != "scan" || slices.Contains(args, "--json") && slices.Contains(args, "--json-summary") {
 		return nil, "", false
 	}
 	var names []string
 	outputPath := ""
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
-		case "--json":
+		case "--json", "--json-summary":
 		case "--command", "--output":
 			option := args[i]
 			if i+1 == len(args) || args[i+1] == "" || strings.HasPrefix(args[i+1], "--") {
@@ -148,7 +152,10 @@ func saveReport(path string, report scan.Report) error {
 	return nil
 }
 
-func writeReport(r scan.Report, jsonOutput bool, stdout, stderr io.Writer) int {
+func writeReport(r scan.Report, jsonOutput, summaryOutput bool, stdout, stderr io.Writer) int {
+	if summaryOutput {
+		return writeSummaryReport(r, stdout, stderr)
+	}
 	for _, issue := range r.Issues {
 		fmt.Fprintf(stderr, "%s: %s\n", issue.Code, issue.Message)
 	}

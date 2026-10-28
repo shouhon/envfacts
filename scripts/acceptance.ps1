@@ -116,7 +116,14 @@ function Invoke-Product([string[]] $Arguments, [int] $Code, [string] $Status = '
         }
     }
     if ($NewRecord) {
-        Assert-Condition ([IO.File]::ReadAllText($NewRecord) -ceq $result.Out) '新規保存と標準出力のJSONが異なります。'
+        if ($Arguments -contains '--json-summary') {
+            $saved = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($NewRecord)) -AsHashtable
+            Assert-Condition ($saved.ContainsKey('packages') -and $saved.packages.Count -eq $result.Json.package_count) '要約モードで詳細記録が保存されていません。'
+            Assert-Condition (($saved.commands | ConvertTo-Json -Depth 50 -Compress) -ceq ($result.Json.commands | ConvertTo-Json -Depth 50 -Compress)) '詳細保存と要約でコマンドの結果が異なります。'
+        }
+        else {
+            Assert-Condition ([IO.File]::ReadAllText($NewRecord) -ceq $result.Out) '新規保存と標準出力のJSONが異なります。'
+        }
     }
     return $result
 }
@@ -191,10 +198,22 @@ try {
     Assert-Condition (@($initial.Json.packages | Where-Object kind -CEQ 'gui').Count -eq 1 -and @($initial.Json.packages | Where-Object kind -CEQ 'no_commands').Count -eq 1) 'コマンドを公開しないパッケージの分類が不正です。'
     Write-Output '受入条件1〜3: 別名・複数コマンド・両導入先・junction・優先候補と後順位を確認しました。'
 
+    $summaryRecord = Join-Path $records '要約と同時保存した詳細.json'
+    $summary = Invoke-Product @('scan', '--command', 'alpha', '--json-summary', '--output', $summaryRecord) 0 'complete' $summaryRecord
+    Assert-Condition ($summary.Json.output_format -ceq 'summary' -and -not $summary.Json.ContainsKey('packages')) '要約と詳細記録を区別できません。'
+    Assert-Condition (($summary.Json.commands[0] | ConvertTo-Json -Depth 50 -Compress) -ceq ($alpha | ConvertTo-Json -Depth 50 -Compress)) '要約で導入版・根拠・候補の優先順位・起動未確認を失っています。'
+    $null = Compare-Records $summaryRecord $summaryRecord 0 'unchanged'
+    $summaryOnly = Save-Record '比較に使えない表示用要約.json' $summary.Json
+    Assert-Issue (Compare-Records $summaryOnly $summaryOnly 2 'incomplete') 'invalid_record'
+
     $missing = Invoke-Product @('scan', '--command', 'missing', '--json') 1 'missing'
     Assert-Condition ($missing.Json.commands[0].status -ceq 'not_found' -and $missing.Json.commands[0].package_ids.Count -eq 0) '未導入の名前の扱いが不正です。'
+    $summaryMissing = Invoke-Product @('scan', '--command', 'missing', '--json-summary') 1 'missing'
+    Assert-Condition ($summaryMissing.Json.commands[0].status -ceq 'not_found') '要約で名前不足を失っています。'
     $unknown = Invoke-Product @('scan', '--command', 'outsider', '--json') 0 'complete'
     Assert-Condition ($unknown.Json.commands[0].status -ceq 'resolved' -and $null -eq $unknown.Json.commands[0].version -and $unknown.Json.commands[0].version_reason.Length -gt 0) '外部コマンドの版不明の扱いが不正です。'
+    $summaryUnknown = Invoke-Product @('scan', '--command', 'outsider', '--json-summary') 0 'complete'
+    Assert-Condition ($summaryUnknown.Json.commands[0].status -ceq 'resolved' -and $null -eq $summaryUnknown.Json.commands[0].version -and $summaryUnknown.Json.commands[0].version_reason.Length -gt 0) '要約で版不明を失っています。'
     $originalPath = $processEnvironment.PATH
     $processEnvironment.PATH = $external
     try {
@@ -212,6 +231,9 @@ try {
         $locked = Invoke-Product @('scan', '--command', 'alpha', '--command', 'missing', '--json') 2 'incomplete'
         Assert-Issue $locked 'unreadable_manifest'
         Assert-Condition (@($locked.Json.commands | Where-Object status -CEQ 'resolved').Count -eq 1) '読取拒否で読めた候補を失っています。'
+        $summaryLocked = Invoke-Product @('scan', '--command', 'alpha', '--command', 'missing', '--json-summary') 2 'incomplete'
+        Assert-Issue $summaryLocked 'unreadable_manifest'
+        Assert-Condition (($summaryLocked.Json.commands | ConvertTo-Json -Depth 50 -Compress) -ceq ($locked.Json.commands | ConvertTo-Json -Depth 50 -Compress)) '要約で読取拒否・名前不足と判明した結果を区別できません。'
     }
     finally { $lockedFile.Dispose(); $lockedPath = '' }
     Assert-Condition ([IO.File]::ReadAllText($manifestPath) -ceq $originalManifest) '読取拒否の確認でマニフェストを変更しています。'
@@ -274,7 +296,7 @@ try {
     Assert-Condition ($overwrite.Json.commands[0].status -ceq 'not_found') '保存失敗で不足の事実を失っています。'
     $noParent = Join-Path $records '未作成/記録.json'
     Assert-Issue (Invoke-Product @('scan', '--json', '--output', $noParent) 2 'incomplete') 'save_failed'
-    foreach ($arguments in @(@('scan', '--command', '--json'), @('diff', '--before', $before, '--json'))) {
+    foreach ($arguments in @(@('scan', '--command', '--json'), @('diff', '--before', $before, '--json'), @('scan', '--command', '--json-summary'), @('scan', '--json', '--json-summary'))) {
         $null = Invoke-Product $arguments 64 'invalid_arguments'
     }
     $invalid = Invoke-Product @('scan', '--unknown') 64
@@ -292,6 +314,22 @@ try {
     # 比較時に再調査すると、読取不能な模擬Scoopにより成功できない状態にする。
     Write-Fixture $manifestPath '{"version":'
     $null = Compare-Records $before $before 0 'unchanged'
+
+    Write-Fixture (Join-Path $userRoot 'apps/unrelated-first/current/scoop-manifest.json') '{"version":"1.0","env_add_path":"bin"}'
+    $summaryBefore = Invoke-Product @('scan', '--command', 'alpha', '--json-summary') 2 'incomplete'
+    foreach ($index in 1..100) {
+        Write-Fixture (Join-Path $userRoot ('apps/unrelated-' + $index + '/current/scoop-manifest.json')) '{"version":"1.0","env_add_path":"bin"}'
+    }
+    $summaryAfter = Invoke-Product @('scan', '--command', 'alpha', '--json-summary') 2 'incomplete'
+    $detailAfter = Invoke-Product @('scan', '--command', 'alpha', '--json') 2 'incomplete'
+    Assert-Condition ($summaryAfter.Json.package_count -eq $summaryBefore.Json.package_count + 100 -and $summaryAfter.Json.issue_count -eq $summaryBefore.Json.issue_count + 100) '要約で全体の集計を失っています。'
+    $aggregated = @($summaryAfter.Json.issues | Where-Object code -CEQ 'unsupported_env_add_path')
+    Assert-Condition ($aggregated.Count -eq 1 -and $aggregated[0].count -eq 101) '同じ原因の警告を件数で集約していません。'
+    Assert-Condition ($summaryAfter.Json.issue_count -eq $detailAfter.Json.issues.Count -and ($summaryAfter.Json.commands | ConvertTo-Json -Depth 50 -Compress) -ceq ($detailAfter.Json.commands | ConvertTo-Json -Depth 50 -Compress)) '要約と詳細の診断またはコマンドの結果が異なります。'
+    Assert-Condition ($summaryAfter.Out.Length -le $summaryBefore.Out.Length + 128 -and $summaryAfter.Err.Length -le $summaryBefore.Err.Length + 32) '無関係なパッケージ数に比例して要約の出力が増えています。'
+    Assert-Condition (-not ($summaryAfter.Out + $summaryAfter.Err).Contains('unrelated-')) '要約に無関係なパッケージの一覧があります。'
+    Write-Output ('要約表示: 無関係なパッケージ100件の追加で標準出力 ' + [Text.Encoding]::UTF8.GetByteCount($summaryBefore.Out) + ' → ' + [Text.Encoding]::UTF8.GetByteCount($summaryAfter.Out) + 'バイト。全体の不完全・警告・名前解決結果を保持しました。')
+
     Assert-Condition ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash -ceq $binaryHash) '受入確認中に実行ファイルが変わりました。'
     Write-Output '受入条件5・9: 各操作前後の不変・対象の非実行・余分な値の非出力・保存・出力先・終了コード0/1/2/64を確認しました。'
     Write-Output ('受入確認完了: ' + $version.Out.Trim() + '、SHA-256: ' + $binaryHash)
