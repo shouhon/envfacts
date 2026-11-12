@@ -38,7 +38,7 @@ func readRecord(path string) (*scan.Report, string) {
 	if !ok {
 		return nil, "invalid_record"
 	}
-	if version, ok := object["schema_version"].(float64); ok && version != 1 {
+	if version, ok := object["schema_version"].(float64); ok && version != 1 && version != 2 {
 		return nil, "unsupported_schema_version"
 	}
 	var r scan.Report
@@ -114,7 +114,7 @@ func fields(value any, required string) bool {
 
 func validRecord(r scan.Report, raw map[string]any) bool {
 	if !fields(raw, "schema_version tool command status captured_at coverage packages commands invocation_status issues") ||
-		r.SchemaVersion != 1 || r.Tool != "envfacts" || r.Command != "scan" || r.InvocationStatus != "not_tested" ||
+		(r.SchemaVersion != 1 && r.SchemaVersion != 2) || r.Tool != "envfacts" || r.Command != "scan" || r.InvocationStatus != "not_tested" ||
 		!slices.Contains([]string{"complete", "missing", "incomplete"}, r.Status) {
 		return false
 	}
@@ -126,6 +126,9 @@ func validRecord(r scan.Report, raw map[string]any) bool {
 		return false
 	}
 	c := r.Coverage
+	if r.SchemaVersion == 1 && c.ScanMode != "" || r.SchemaVersion == 2 && (!c.PathOnly() || c.CommandSelection != "explicit" || len(c.ScoopRoots) != 0 || len(r.Packages) != 0) {
+		return false
+	}
 	if !slices.Contains([]string{"scoop", "explicit"}, c.CommandSelection) ||
 		!uniqueStrings(c.RequestedCommands) || !uniqueStrings(c.Extensions) || !uniqueStrings(c.Excluded) ||
 		c.CommandSelection == "scoop" && len(c.RequestedCommands) != 0 || c.CommandSelection == "explicit" && len(c.RequestedCommands) == 0 {
@@ -142,7 +145,7 @@ func validRecord(r scan.Report, raw map[string]any) bool {
 		}
 		roots[root.Scope] = root
 	}
-	if len(roots) != 2 {
+	if !c.PathOnly() && len(roots) != 2 {
 		return false
 	}
 	paths, priorities := map[string]scan.SearchPath{}, map[int]bool{}
@@ -188,6 +191,9 @@ func validRecord(r scan.Report, raw map[string]any) bool {
 			!validVersion(command.Version, command.VersionSource, command.VersionReason) || !validReferences(command.PackageIDs, packages) {
 			return false
 		}
+		if c.PathOnly() && (command.Version != nil || command.ActualPath != nil) {
+			return false
+		}
 		names[command.Name] = true
 		if command.Status == "not_found" {
 			if len(command.Candidates) != 0 || command.PreferredPath != nil || command.ActualPath != nil || command.Version != nil {
@@ -203,6 +209,11 @@ func validRecord(r scan.Report, raw map[string]any) bool {
 			if !slices.Contains(c.Extensions, strings.ToLower(filepath.Ext(command.Name))) {
 				expectedName += filepath.Ext(candidate.Path)
 			}
+			validResolution := slices.Contains([]string{"direct", "scoop_shim", "unknown"}, candidate.Resolution) &&
+				(candidate.Resolution == "unknown") == (candidate.ActualPath == nil)
+			if c.PathOnly() {
+				validResolution = candidate.ActualPath == nil && (candidate.Resolution == "not_checked" || candidate.Resolution == "unknown" && r.Status == "incomplete")
+			}
 			if !fields(raw["commands"].([]any)[i].(map[string]any)["candidates"].([]any)[j], "path priority path_priority extension_priority actual_path resolution package_ids") ||
 				!exists || !filepath.IsAbs(candidate.Path) || candidatePaths[pathKey(candidate.Path)] ||
 				!strings.EqualFold(filepath.Base(candidate.Path), expectedName) ||
@@ -210,8 +221,7 @@ func validRecord(r scan.Report, raw map[string]any) bool {
 				candidate.ExtensionPriority < 1 || candidate.ExtensionPriority > len(c.Extensions) ||
 				!strings.EqualFold(filepath.Ext(candidate.Path), c.Extensions[candidate.ExtensionPriority-1]) ||
 				!validReferences(candidate.PackageIDs, packages) ||
-				!slices.Contains([]string{"direct", "scoop_shim", "unknown"}, candidate.Resolution) ||
-				(candidate.Resolution == "unknown") != (candidate.ActualPath == nil) || candidate.ActualPath != nil && !filepath.IsAbs(*candidate.ActualPath) {
+				!validResolution || candidate.ActualPath != nil && !filepath.IsAbs(*candidate.ActualPath) {
 				return false
 			}
 			candidatePaths[pathKey(candidate.Path)], candidatePriorities[candidate.Priority] = true, true

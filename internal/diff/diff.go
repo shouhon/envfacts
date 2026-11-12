@@ -70,7 +70,7 @@ func (r *Report) compareCoverage(before, after scan.Coverage) {
 	aPaths, bPaths := searchMap(before.SearchPaths), searchMap(after.SearchPaths)
 	common := &r.Coverage.Common
 	sameRoots, samePaths := sameSet(keys(aRoots), keys(bRoots)), sameSet(keys(aPaths), keys(bPaths))
-	common.PackageInventoryComparable = sameRoots
+	common.PackageInventoryComparable = sameRoots && !before.PathOnly() && !after.PathOnly()
 	for _, key := range keys(aRoots) {
 		a := aRoots[key]
 		b, exists := bRoots[key]
@@ -97,7 +97,7 @@ func (r *Report) compareCoverage(before, after scan.Coverage) {
 	common.Extensions = intersection(before.Extensions, after.Extensions)
 	sameSelection := before.CommandSelection == after.CommandSelection && sameSet(before.RequestedCommands, after.RequestedCommands)
 	common.CommandInventoryComparable = sameSelection && (before.CommandSelection == "explicit" || common.PackageInventoryComparable)
-	if !sameRoots || !samePaths || !sameSelection || !sameSet(before.Extensions, after.Extensions) || !sameSet(before.Excluded, after.Excluded) {
+	if before.ScanMode != after.ScanMode || !sameRoots || !samePaths || !sameSelection || !sameSet(before.Extensions, after.Extensions) || !sameSet(before.Excluded, after.Excluded) {
 		r.AddIssue("coverage_mismatch", "調査範囲が異なります。coverage.commonに示す共通範囲だけを比較し、全体の一致は確認していません。", "coverage")
 	}
 	aOrder, bOrder := []string{}, []string{}
@@ -165,6 +165,7 @@ func (r *Report) comparePackages(before, after []scan.Package) {
 }
 
 func (r *Report) compareCommands(before, after []scan.Command) {
+	pathOnly := r.Coverage.Before.PathOnly() || r.Coverage.After.PathOnly()
 	a, b := map[string]scan.Command{}, map[string]scan.Command{}
 	for _, c := range before {
 		a[c.Name] = c
@@ -193,10 +194,10 @@ func (r *Report) compareCommands(before, after []scan.Command) {
 			if !equalPath(x.PreferredPath, y.PreferredPath) {
 				r.change("priority_changed", "command", name, "preferred_path", x.PreferredPath, y.PreferredPath)
 			}
-			if (x.Status == "not_found" || x.ActualPath != nil) && (y.Status == "not_found" || y.ActualPath != nil) && !equalPath(x.ActualPath, y.ActualPath) {
+			if !pathOnly && (x.Status == "not_found" || x.ActualPath != nil) && (y.Status == "not_found" || y.ActualPath != nil) && !equalPath(x.ActualPath, y.ActualPath) {
 				r.change("actual_path_changed", "command", name, "actual_path", x.ActualPath, y.ActualPath)
 			}
-			if x.Status == "resolved" && y.Status == "resolved" {
+			if !pathOnly && x.Status == "resolved" && y.Status == "resolved" {
 				r.compareVersion("command", name, x.Version, y.Version)
 			}
 		}
@@ -208,6 +209,7 @@ func (r *Report) compareCommands(before, after []scan.Command) {
 }
 
 func (r *Report) compareCandidates(command string, before, after []scan.Candidate) {
+	pathOnly := r.Coverage.Before.PathOnly() || r.Coverage.After.PathOnly()
 	a, b := map[string]scan.Candidate{}, map[string]scan.Candidate{}
 	for _, side := range []struct {
 		candidates []scan.Candidate
@@ -229,12 +231,12 @@ func (r *Report) compareCandidates(command string, before, after []scan.Candidat
 		case !yOK:
 			r.change("removed", "candidate", key, "", candidateFact(x), nil)
 		default:
-			if x.ActualPath == nil || y.ActualPath == nil {
+			if !pathOnly && (x.ActualPath == nil || y.ActualPath == nil) {
 				r.AddIssue("unknown_target", "候補の実体に未確認の値があるため、同じ実体か確認できません。", key)
-			} else if !equalPath(x.ActualPath, y.ActualPath) {
+			} else if !pathOnly && !equalPath(x.ActualPath, y.ActualPath) {
 				r.change("actual_path_changed", "candidate", key, "actual_path", x.ActualPath, y.ActualPath)
 			}
-			if x.Resolution != "unknown" && y.Resolution != "unknown" && x.Resolution != y.Resolution {
+			if !pathOnly && x.Resolution != "unknown" && y.Resolution != "unknown" && x.Resolution != y.Resolution {
 				r.change("updated", "candidate", key, "resolution", x.Resolution, y.Resolution)
 			}
 			if r.Coverage.Common.PackageInventoryComparable && !sameSet(x.PackageIDs, y.PackageIDs) {

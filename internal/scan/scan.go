@@ -20,8 +20,13 @@ type installedBin struct {
 }
 
 // Scan はローカル情報を読むだけで、対象コマンドや管理ツールを実行しない。
-func Scan(names []string) Report {
+func Scan(names []string, pathOnly bool) Report {
 	s := scanner{report: NewReport("scan"), readFile: os.ReadFile, readDir: os.ReadDir}
+	if pathOnly {
+		s.report.SchemaVersion = 2
+		s.report.Coverage.ScanMode = "path_only"
+		s.report.Coverage.Excluded = append(s.report.Coverage.Excluded, "Scoopの導入台帳・導入元・導入版", "候補の実体・shimの参照先")
+	}
 	return s.scan(names)
 }
 
@@ -31,9 +36,11 @@ func (s *scanner) scan(names []string) Report {
 		s.report.Coverage.CommandSelection = "explicit"
 		s.report.Coverage.RequestedCommands = normalizedNames(names)
 	}
-	s.loadRoots()
-	for i := range s.report.Coverage.ScoopRoots {
-		s.loadPackages(&s.report.Coverage.ScoopRoots[i])
+	if !s.report.Coverage.PathOnly() {
+		s.loadRoots()
+		for i := range s.report.Coverage.ScoopRoots {
+			s.loadPackages(&s.report.Coverage.ScoopRoots[i])
+		}
 	}
 	if len(names) == 0 {
 		for _, p := range s.report.Packages {

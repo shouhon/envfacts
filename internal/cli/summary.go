@@ -30,6 +30,7 @@ type scanSummary struct {
 }
 
 type summaryCoverage struct {
+	ScanMode          string      `json:"scan_mode,omitempty"`
 	ScoopRoots        []scan.Root `json:"scoop_roots"`
 	CommandSelection  string      `json:"command_selection"`
 	RequestedCommands []string    `json:"requested_commands"`
@@ -57,6 +58,7 @@ func summarize(r scan.Report) scanSummary {
 		InvocationStatus: r.InvocationStatus, IssueCount: len(r.Issues), Issues: []summaryIssue{},
 		DetailsHint: summaryDetailsHint,
 		Coverage: summaryCoverage{
+			ScanMode:   r.Coverage.ScanMode,
 			ScoopRoots: r.Coverage.ScoopRoots, CommandSelection: r.Coverage.CommandSelection,
 			RequestedCommands: r.Coverage.RequestedCommands, Extensions: r.Coverage.Extensions,
 			Excluded: r.Coverage.Excluded,

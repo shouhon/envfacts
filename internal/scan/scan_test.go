@@ -88,7 +88,7 @@ func TestScoopPackagesAndShadowedCandidates(t *testing.T) {
 	write(t, filepath.Join(external, "alpha.cmd"), "@echo 実行禁止")
 	t.Setenv("PATH", strings.Join([]string{filepath.Join(user, "shims"), external, filepath.Join(global, "shims")}, ";"))
 	before, envBefore := snapshot(t, filepath.Dir(user)), os.Environ()
-	r := Scan(nil)
+	r := Scan(nil, false)
 	if r.Status != "complete" || r.ExitCode() != 0 {
 		t.Fatalf("調査状態 = %s、問題 = %v", r.Status, r.Issues)
 	}
@@ -119,7 +119,7 @@ func TestScoopPackagesAndShadowedCandidates(t *testing.T) {
 	if !reflect.DeepEqual(before, snapshot(t, filepath.Dir(user))) || !reflect.DeepEqual(envBefore, os.Environ()) {
 		t.Fatal("調査対象または環境変数を変更しています。")
 	}
-	second := Scan(nil)
+	second := Scan(nil, false)
 	r.CapturedAt, second.CapturedAt = "", ""
 	if !reflect.DeepEqual(r, second) {
 		t.Fatal("同じ情報から作る記録の順序が安定していません。")
@@ -153,7 +153,7 @@ func TestExplicitSelectionDistinguishesMissingAndUnknown(t *testing.T) {
 	user, _, path := environment(t)
 	install(t, user, "導入済み", `{"version":"3","bin":[["tool.exe","installed"]]}`)
 	write(t, filepath.Join(path, "outside.exe"), "実行禁止")
-	r := Scan([]string{"OUTSIDE", "missing", "installed", "outside"})
+	r := Scan([]string{"OUTSIDE", "missing", "installed", "outside"}, false)
 	if r.Status != "missing" || r.ExitCode() != 1 || len(r.Commands) != 3 {
 		t.Fatalf("調査状態 = %s", r.Status)
 	}
@@ -166,7 +166,7 @@ func TestExplicitSelectionDistinguishesMissingAndUnknown(t *testing.T) {
 	if c := command(t, r, "missing"); c.Status != "not_found" || len(c.PackageIDs) != 0 {
 		t.Fatal("未導入コマンドの記録が不正です。")
 	}
-	if len(Scan([]string{"outside"}).Commands) != 1 {
+	if len(Scan([]string{"outside"}, false).Commands) != 1 {
 		t.Fatal("明示していないコマンドも探索しています。")
 	}
 }
@@ -179,7 +179,7 @@ func TestPowerShellPathAndExtensionOrder(t *testing.T) {
 	}
 	t.Setenv("PATH", first+";;"+second+";"+first)
 	t.Setenv("PATHEXT", ".CMD;.EXE;.cmd")
-	r := Scan([]string{"tool"})
+	r := Scan([]string{"tool"}, false)
 	c := command(t, r, "tool")
 	if r.ExitCode() != 0 || len(c.Candidates) != 4 {
 		t.Fatal("探索候補が不正です。")
@@ -189,11 +189,11 @@ func TestPowerShellPathAndExtensionOrder(t *testing.T) {
 			t.Fatal("PATHまたは拡張子の優先順が不正です。")
 		}
 	}
-	if got := command(t, Scan([]string{"tool.exe"}), "tool.exe"); len(got.Candidates) != 2 || strings.HasSuffix(*got.PreferredPath, ".ps1") {
+	if got := command(t, Scan([]string{"tool.exe"}, false), "tool.exe"); len(got.Candidates) != 2 || strings.HasSuffix(*got.PreferredPath, ".ps1") {
 		t.Fatal("拡張子を指定した探索が不正です。")
 	}
 	t.Setenv("PATH", `~\外部 CLI`)
-	if got := command(t, Scan([]string{"tool"}), "tool"); len(got.Candidates) != 3 {
+	if got := command(t, Scan([]string{"tool"}, false), "tool"); len(got.Candidates) != 3 {
 		t.Fatal("PATHの利用者フォルダー指定を解決していません。")
 	}
 }
@@ -244,7 +244,7 @@ func TestUnsupportedAndBrokenMetadata(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			user, _, _ := environment(t)
 			install(t, user, "broken", tc.content)
-			r := Scan([]string{"missing"})
+			r := Scan([]string{"missing"}, false)
 			if r.ExitCode() != 2 || len(r.Packages) != 1 || !hasIssue(r, tc.code) {
 				t.Fatalf("失敗の分類が不正です: %v", r.Issues)
 			}
@@ -263,11 +263,11 @@ func TestLegacyAndArchitectureSpecificMetadata(t *testing.T) {
 	write(t, filepath.Join(current, "install.json"), `{"architecture":"64bit","url":"fixture-secret-do-not-report"}`)
 	write(t, filepath.Join(current, "tool.exe"), "実行禁止")
 	t.Setenv("PATH", current)
-	r := Scan(nil)
+	r := Scan(nil, false)
 	if r.ExitCode() != 0 || len(r.Commands) != 1 || command(t, r, "alias").Status != "not_found" || r.Packages[0].Commands[0] != "alias" {
 		t.Fatalf("導入時の構成が反映されていません: %v", r.Issues)
 	}
-	r = Scan([]string{"alias.exe"})
+	r = Scan([]string{"alias.exe"}, false)
 	if command(t, r, "alias.exe").Version != nil {
 		t.Fatal("存在しない別名に版を推測しています。")
 	}
@@ -286,7 +286,7 @@ func TestUnknownShimNeverUsesInstalledVersion(t *testing.T) {
 			write(t, filepath.Join(user, "shims", "tool"+tc.extension), "throw '実行禁止'")
 			write(t, filepath.Join(user, "shims", "tool.shim"), tc.metadata)
 			t.Setenv("PATH", filepath.Join(user, "shims"))
-			r := Scan(nil)
+			r := Scan(nil, false)
 			c := command(t, r, "tool")
 			if r.ExitCode() != 2 || !hasIssue(r, tc.code) || c.Status != "resolved" || c.Version != nil || c.ActualPath != nil {
 				t.Fatal("未確認のshimを確認済みにしています。")
@@ -303,12 +303,12 @@ func TestRootConfigurationAndMissingCurrent(t *testing.T) {
 	data, _ := json.Marshal(config)
 	write(t, filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "scoop", "config.json"), string(data))
 	write(t, filepath.Join(user, "apps", "incomplete", "9", "manifest.json"), `{"version":"9"}`)
-	r := Scan(nil)
+	r := Scan(nil, false)
 	if !samePath(r.Coverage.ScoopRoots[0].Path, user) || !samePath(r.Coverage.ScoopRoots[1].Path, global) || !hasIssue(r, "unavailable_current") || r.Packages[0].Version != nil {
 		t.Fatal("導入先またはcurrentがない場合の扱いが不正です。")
 	}
 	write(t, filepath.Join(user, "config.json"), `{"no_junction":true}`)
-	if r = Scan(nil); !hasIssue(r, "unsupported_scoop_configuration") {
+	if r = Scan(nil, false); !hasIssue(r, "unsupported_scoop_configuration") {
 		t.Fatal("未対応の設定を成功としています。")
 	}
 }
@@ -316,7 +316,7 @@ func TestRootConfigurationAndMissingCurrent(t *testing.T) {
 func TestInvalidConfigurationDoesNotApplyPartialValues(t *testing.T) {
 	_, _, _ = environment(t)
 	write(t, filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "scoop", "config.json"), `{"root_path":"fixture-secret-do-not-report","no_junction":"invalid"}`)
-	r := Scan(nil)
+	r := Scan(nil, false)
 	if r.ExitCode() != 2 || !hasIssue(r, "invalid_scoop_config") {
 		t.Fatal("不正な設定を成功としています。")
 	}
@@ -331,7 +331,7 @@ func TestAbsentRootsAndCommandValidation(t *testing.T) {
 	user, global, _ := environment(t)
 	t.Setenv("SCOOP", filepath.Join(user, "存在しない"))
 	t.Setenv("SCOOP_GLOBAL", filepath.Join(global, "存在しない"))
-	r := Scan(nil)
+	r := Scan(nil, false)
 	if r.ExitCode() != 0 || r.Coverage.ScoopRoots[0].Status != "absent" {
 		t.Fatal("存在しない導入先を区別していません。")
 	}
@@ -373,7 +373,7 @@ func TestWindowsJunctionTargetsMatchInstalledVersion(t *testing.T) {
 	}
 	addShim(t, user, "alpha", filepath.Join(current, "bin", "engine.exe"))
 	t.Setenv("PATH", filepath.Join(user, "shims"))
-	r := Scan(nil)
+	r := Scan(nil, false)
 	c := command(t, r, "alpha")
 	actualVersion, actualPath := "", ""
 	if c.Version != nil {
@@ -387,7 +387,7 @@ func TestWindowsJunctionTargetsMatchInstalledVersion(t *testing.T) {
 		t.Fatalf("junctionを通した導入版の照合に失敗しました: 版=%q、実体=%q、期待=%q、問題=%v", actualVersion, actualPath, expectedPath, r.Issues)
 	}
 	t.Setenv("PATH", filepath.Join(current, "bin"))
-	r = Scan([]string{"engine"})
+	r = Scan([]string{"engine"}, false)
 	if r.ExitCode() != 0 || command(t, r, "engine").ActualPath == nil {
 		t.Fatal("PATHがjunctionの配下の場合に実体を確認できません。")
 	}

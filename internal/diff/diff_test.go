@@ -335,7 +335,7 @@ func TestRecordValidationAndMetadataProtection(t *testing.T) {
 		{"破損", "invalid_record", `{"fixture-secret":`},
 		{"配列", "invalid_record", `[]`}, {"null", "invalid_record", `null`}, {"欠落", "invalid_record", `{}`},
 		{"複数のJSON", "invalid_record", string(data) + `{}`},
-		{"未対応版", "unsupported_schema_version", strings.Replace(string(data), `"schema_version":1`, `"schema_version":2`, 1)},
+		{"未対応版", "unsupported_schema_version", strings.Replace(string(data), `"schema_version":1`, `"schema_version":3`, 1)},
 		{"重複キー", "invalid_record", strings.Replace(string(data), `"tool":"envfacts"`, `"tool":"fixture-secret","tool":"envfacts"`, 1)},
 		{"大文字小文字だけ異なるキー", "invalid_record", strings.Replace(string(data), `"tool":"envfacts"`, `"tool":"envfacts","Commands":[{}]`, 1)},
 		{"Unicodeで同一視されるキー", "invalid_record", strings.Replace(string(data), `"tool":"envfacts"`, `"tool":"envfacts","ſtatus":"complete"`, 1)},

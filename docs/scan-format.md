@@ -1,6 +1,6 @@
 # 収集方式と記録形式
 
-要件の正本は [要件定義書](requirements.md) です。この文書は `scan` の対応形式と `schema_version: 1` の取り決めを記載します。保存済みの記録を比較する `diff` の対応範囲は [記録比較](diff-format.md) を参照してください。
+要件の正本は [要件定義書](requirements.md) です。この文書は `scan` の対応形式と、全体調査の `schema_version: 1`・PATH限定調査の形式2の取り決めを記載します。保存済みの記録を比較する `diff` の対応範囲は [記録比較](diff-format.md) を参照してください。
 
 ## 読み取るローカル情報
 
@@ -51,23 +51,40 @@
 
 ## 表示専用のJSON要約
 
-`scan --json-summary` は同じ収集結果から表示だけを要約します。`--command` を併用すると少数コマンドの確認に使えます。名前を指定しなければ従来と同じScoopの公開名が対象です。詳細JSONと保存記録の `schema_version: 1` は変更しません。
+`scan --json-summary` は同じ収集結果から表示だけを要約します。`--command` を併用すると少数コマンドの確認に使えます。名前を指定しなければ従来と同じScoopの公開名が対象です。全体調査の詳細JSONと保存記録の `schema_version: 1` は変更しません。`--path-only` では後述の形式2と限定範囲を保持します。
 
 | 項目 | 取り決め |
 | --- | --- |
-| `schema_version` / `output_format` | `1` / `summary`。表示専用で、`diff` に渡す記録とは区別する |
+| `schema_version` / `output_format` | 全体調査は `1`、PATH限定調査は `2` / `summary`。表示専用で、`diff` に渡す記録とは区別する |
 | `tool` / `command` / `status` / `captured_at` | 詳細記録と同じ意味。全体が `incomplete` ならコマンドが `resolved` でも不完全のまま |
 | `coverage.scoop_roots` / `command_selection` / `requested_commands` | 詳細記録と同じ導入先・調査状態・コマンドの選択範囲 |
+| `coverage.scan_mode` | PATH限定調査では `path_only`。全体調査では項目を省略する |
 | `coverage.search_path_counts` | PATHの探索先を `complete` / `absent` / `incomplete` の件数に集約。個々の探索先一覧は省く |
 | `coverage.extensions` / `excluded` | 拡張子の探索順と対象外の範囲を保持 |
-| `package_count` | 詳細記録に含むパッケージ数。`packages` 一覧は省く |
+| `package_count` | 詳細記録に含むパッケージ数。`packages` 一覧は省く。PATH限定の `0` は未調査であり、未導入を表さない |
 | `commands` / `invocation_status` | 詳細記録と同じ項目・意味・順序。候補・優先順位・関連パッケージの識別子・導入版・根拠・不明理由を残し、起動は常に `not_tested` |
 | `issue_count` / `issues` | 診断の総数と、同じ `code`・`message` ごとの `count`。コード・説明の順にソートし、個別の `source` は省く |
 | `details_hint` | `--json` への切り替えと `--output` による詳細保存の案内 |
 
 標準出力はJSONオブジェクト1件です。標準エラーも同じ単位で診断を集約し、件数と詳細への案内を出します。終了コードは詳細出力と同じで、保存失敗や標準出力の失敗は `2`、引数の誤りは `64` です。`--json` との併用は引数エラーとして要約JSONを返します。`diff` では `--json-summary` を受け付けません。
 
-要約は比較用の記録ではありません。`--output` を併用した場合、指定先には要約ではなく従来の詳細記録を保存します。診断の個別の情報源や全探索先は、同じ `--command` の指定で `--json-summary` を `--json` に替えるか、保存した詳細記録で確認できます。
+要約は比較用の記録ではありません。`--output` を併用した場合、指定先には要約ではなく同じ調査範囲の詳細記録を保存します。診断の個別の情報源や全探索先は、同じ調査範囲・`--command` の指定で `--json-summary` を `--json` に替えるか、保存した詳細記録で確認できます。
+
+## PATH限定調査の形式2
+
+`scan --path-only --command <名前> ...` では、1件以上の明示名だけを探索します。PATHと拡張子の順序は通常の調査と同じです。Scoopの設定・導入台帳・shim本文を読まず、候補の存在だけを確認します。`complete` はこの限定範囲の完了で、環境全体の調査完了ではありません。
+
+| 項目 | 形式1からの違い |
+| --- | --- |
+| `schema_version` | `2`。旧版が限定記録を全体記録として比較しないための区別 |
+| `coverage.scan_mode` | 必須の `path_only`。形式1では省略 |
+| `coverage.command_selection` / `requested_commands` | `explicit` と1件以上の明示名。正規化は形式1と同じ |
+| `coverage.scoop_roots` / `packages` | 常に `[]`。未調査であって不存在ではない |
+| `coverage.excluded` | 従来の対象外に「Scoopの導入台帳・導入元・導入版」「候補の実体・shimの参照先」を追加 |
+| `commands` / `candidates` | 全候補と優先順位・優先パスを保持。`actual_path`・`version`・`version_source` は `null`、`package_ids` は `[]`。`version_reason` に導入台帳未調査を明記 |
+| `candidates[].resolution` | 存在を確認できた候補は `not_checked`（実体は対象外）。候補自体を確認できなければ `unknown` と診断を残す |
+
+名前不足・PATHの読取不能・保存失敗と終了コードの対応は形式1と同じです。`invocation_status` も常に `not_tested` です。通常の全体調査や引数エラーのJSONは形式1を維持します。形式2の要約にも `scan_mode` と対象外を残し、`--output` は同じ形式2の詳細記録を保存します。
 
 ## 不完全な調査と保存
 

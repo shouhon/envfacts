@@ -17,18 +17,22 @@ import (
 const usage = `envfacts - ローカル環境のCLIの導入情報と名前解決結果を報告するツール
 
 使い方:
-  envfacts scan [--command <名前> ...] [--json | --json-summary] [--output <ファイル>]
+  envfacts scan [--path-only] [--command <名前> ...] [--json | --json-summary] [--output <ファイル>]
   envfacts diff --before <記録> --after <記録> [--json]
   envfacts --help       日本語の使い方と調査範囲を表示する
   envfacts --version    版番号を表示する
 
 scanのオプション:
   --command <名前>     指定した名前だけをPATHから探索する。繰り返し指定できる
+  --path-only          --commandで指定した名前のPATH確認だけを行う
   --json               標準出力にJSON記録を1件表示する
   --json-summary       コマンドの結果と件数で集約した診断をJSONで表示する
   --output <ファイル>  JSON記録を保存する。既存ファイルは上書きしない
   名前の指定がなければ、Scoopの導入情報で公開されたコマンドを探索する。
-  --commandの指定によらず、Scoop全体の導入情報を収集する。
+  通常は--commandの指定によらず、Scoop全体の導入情報を収集する。
+  --path-onlyには--commandが必須。導入台帳・導入版・実体・shim参照先は調べない。
+  限定記録（形式2）どうしはPATHの候補・優先順を比較する。全体調査の完了ではない。
+  全体記録（形式1）との比較は共通のPATH範囲だけを扱い、不完全（終了2）とする。
   --jsonと--json-summaryは併用できない。要約でも--outputは詳細記録を保存する。
 
 diffのオプション:
@@ -78,14 +82,14 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		}
 		return writeDiffReport(diff.Files(before, after), jsonOutput, stdout, stderr)
 	}
-	names, outputPath, valid := parseScan(args)
+	names, outputPath, pathOnly, valid := parseScan(args)
 	if !valid {
 		r := scan.NewReport(command)
 		r.Status = "invalid_arguments"
 		r.Issues = append(r.Issues, scan.Issue{Code: "invalid_arguments", Message: "引数が不正です。使い方: envfacts --help", Source: "arguments"})
 		return writeReport(r, jsonOutput, summaryOutput, stdout, stderr)
 	}
-	r := scan.Scan(names)
+	r := scan.Scan(names, pathOnly)
 	if outputPath != "" {
 		if err := saveReport(outputPath, r); err != nil {
 			r.AddIssue("save_failed", "JSON記録を保存できませんでした。既存ファイルの上書きや保存先ディレクトリの作成は行いません。", outputPath)
@@ -94,37 +98,43 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	return writeReport(r, jsonOutput, summaryOutput, stdout, stderr)
 }
 
-func parseScan(args []string) ([]string, string, bool) {
+func parseScan(args []string) ([]string, string, bool, bool) {
 	if len(args) == 0 || args[0] != "scan" || slices.Contains(args, "--json") && slices.Contains(args, "--json-summary") {
-		return nil, "", false
+		return nil, "", false, false
 	}
 	var names []string
 	outputPath := ""
+	pathOnly := false
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
 		case "--json", "--json-summary":
+		case "--path-only":
+			if pathOnly {
+				return nil, "", false, false
+			}
+			pathOnly = true
 		case "--command", "--output":
 			option := args[i]
 			if i+1 == len(args) || args[i+1] == "" || strings.HasPrefix(args[i+1], "--") {
-				return nil, "", false
+				return nil, "", false, false
 			}
 			i++
 			if option == "--command" {
 				if !scan.ValidCommandName(args[i]) {
-					return nil, "", false
+					return nil, "", false, false
 				}
 				names = append(names, args[i])
 			} else {
 				if outputPath != "" {
-					return nil, "", false
+					return nil, "", false, false
 				}
 				outputPath = args[i]
 			}
 		default:
-			return nil, "", false
+			return nil, "", false, false
 		}
 	}
-	return names, outputPath, true
+	return names, outputPath, pathOnly, !pathOnly || len(names) > 0
 }
 
 func saveReport(path string, report scan.Report) error {
@@ -167,7 +177,12 @@ func writeReport(r scan.Report, jsonOutput, summaryOutput bool, stdout, stderr i
 	} else if r.Status != "invalid_arguments" {
 		var text strings.Builder
 		status := map[string]string{"complete": "完了", "missing": "指定した名前に不足あり", "incomplete": "不完全"}[r.Status]
-		fmt.Fprintf(&text, "調査: %s\n導入パッケージ: %d件、対象コマンド: %d件\n", status, len(r.Packages), len(r.Commands))
+		if r.Coverage.PathOnly() {
+			fmt.Fprintf(&text, "調査: %s（指定名のPATH確認のみ）\n対象コマンド: %d件\n", status, len(r.Commands))
+			text.WriteString("対象外: Scoopの導入台帳・導入元・導入版、候補の実体・shimの参照先。環境全体の調査は行っていません。\n")
+		} else {
+			fmt.Fprintf(&text, "調査: %s\n導入パッケージ: %d件、対象コマンド: %d件\n", status, len(r.Packages), len(r.Commands))
+		}
 		for _, c := range r.Commands {
 			if c.PreferredPath == nil {
 				fmt.Fprintf(&text, "%s: PATHから未検出\n", c.Name)

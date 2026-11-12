@@ -1,6 +1,6 @@
 # 記録比較
 
-製品仕様の正本は [要件定義書](requirements.md)、入力の取り決めは [収集方式と記録形式](scan-format.md) です。`diff` は `schema_version: 1` の保存済み `scan` 記録2件だけを読み、導入先・PATH・対象CLIを調べ直しません。入力ファイルは変更しません。
+製品仕様の正本は [要件定義書](requirements.md)、入力の取り決めは [収集方式と記録形式](scan-format.md) です。`diff` は全体調査（`schema_version: 1`）とPATH限定調査（形式2）の保存済み `scan` 記録2件だけを読み、導入先・PATH・対象CLIを調べ直しません。入力ファイルは変更しません。
 
 ```powershell
 .\bin\envfacts.exe diff --before .\before.json --after .\after.json
@@ -38,6 +38,16 @@
 元の調査が不完全なら `incomplete_record` を返します。未読の導入先の欠落を削除と扱わず、マニフェストを読めず `kind: unknown` になっただけの分類・公開コマンドも定義変更としません。確認できた導入版などの変更は残します。
 
 ## 出力と入力検査
+
+### PATH限定記録の比較
+
+形式2は `coverage.scan_mode: path_only`、明示名1件以上、導入先・パッケージの空配列、導入版・実体の未確認が整合する場合だけ受理します。形式1に限定範囲を指定した記録や、形式2に導入情報・確認済み実体を混ぜた記録は `invalid_record` です。旧版のenvfactsは形式2に未対応のため、比較時は新しい版を使用してください。
+
+限定記録どうしでは、共通のコマンドとPATHの全候補・優先パス・優先順位を比較します。対象外の導入版、実体、shim解決方式、関連パッケージは比較せず、それらの未調査を `unknown_version`・`unknown_target` にもしません。差分なし・終了0は限定したPATHの事実に限られ、同じ導入版・実体を確認した意味ではありません。PATHの読取不能など、選んだ範囲内の失敗は引き続き不完全とします。
+
+全体記録と限定記録の比較では `coverage_mismatch`・終了2を返します。`coverage.before`・`after` に限定範囲を保持し、`package_inventory_comparable` は偽、共通の導入先は空とします。未調査のパッケージを追加・削除扱いにせず、共通のPATH候補で確認できる変更は保持します。限定記録どうしでもパッケージ全体の比較は対象外のため、この値は偽です。
+
+### 結果の形式
 
 出力は `schema_version: 1`、`tool: envfacts`、`command: diff` です。記録日時は比較した時点のUTCです。`packages` と `commands` は空配列とし、比較で確認した事実を `changes`、比較範囲を `coverage` に出します。元の調査結果全体を再出力しません。`invocation_status` は常に `not_tested` です。
 

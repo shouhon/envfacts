@@ -8,6 +8,7 @@ Windowsに導入されたCLIと、PATHから見つかる実行ファイルを整
 
 - Scoopの利用者単位・全利用者共通の導入情報から、パッケージ名、導入版、公開コマンドを収集
 - PATH上の同名コマンドと優先順、解釈できるshimの参照先を確認
+- 明示した名前のPATH確認だけを行う限定調査（Scoopの導入台帳は収集しない）
 - 日本語表示、JSON出力、既存ファイルを上書きしない記録の保存
 - 保存済みの記録を比較し、追加・削除・導入版・実体・優先順の変更を報告
 
@@ -73,6 +74,20 @@ envfacts scan
 envfacts scan --command git --command python --json
 ```
 
+指定した名前の所在とPATH上の優先順位だけが必要な場合は、`--path-only` を指定します。
+
+```powershell
+envfacts scan --path-only --command git --command python
+envfacts scan --path-only --command gh --json-summary
+envfacts scan --path-only --command gh --json --output .\path-before.json
+```
+
+`--path-only` には1件以上の `--command` が必要です。Scoopの設定・導入台帳・shim本文を読まず、指定名の全候補と優先順位、名前不足、PATHの読取不能を報告します。導入元・導入版・候補の実体・shim参照先・起動は未確認です。`packages: []` や要約の `package_count: 0` は未調査を表し、未導入の意味ではありません。
+
+通常表示には限定範囲と対象外を示し、JSON・要約には `coverage.scan_mode: path_only` を記録します。`complete`・終了 `0` は選んだPATH範囲の完了です。全体の導入情報まで確認した意味ではありません。限定記録は `schema_version: 2` で、従来の全体記録（形式1）も引き続き利用できます。旧版のenvfactsは形式2を比較できません。
+
+限定記録どうしの `diff` はPATHの候補と優先順位だけを比較し、対象外の導入版や実体の不明を失敗にしません。全体記録と限定記録の比較は共通のPATH範囲に限り、`coverage_mismatch`・終了 `2` を返します。未調査のパッケージを追加・削除扱いにしません。
+
 少数のコマンドを短いJSONで確認する場合は、`--json-summary` を使います。
 
 ```powershell
@@ -101,7 +116,7 @@ envfacts --version
 
 `--json` は標準出力にJSONオブジェクト1件を出し、診断は標準エラーへ出します。`--output` は同じJSON形式を新規ファイルへ保存し、既存ファイルの上書きや親ディレクトリの作成は行いません。保存先を指定しなければファイルを作成しません。
 
-`diff` は保存済みの記録だけを読み、再調査しません。日時や配列の並び順だけの違いは除外します。調査範囲が異なる場合は共通範囲だけを比較し、版不明や未読範囲がある場合は不完全として報告します。
+`diff` は保存済みの記録だけを読み、再調査しません。日時や配列の並び順だけの違いは除外します。調査範囲が異なる場合は共通範囲だけを比較し、比較対象の版が不明、または未読範囲がある場合は不完全として報告します。
 
 ### 終了コード
 

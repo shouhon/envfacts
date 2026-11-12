@@ -120,12 +120,24 @@ func (s *scanner) resolve(names []string) {
 		} else if s.report.Coverage.CommandSelection == "explicit" && s.report.Status != "incomplete" {
 			s.report.Status = "missing"
 		}
+		if s.report.Coverage.PathOnly() {
+			c.VersionReason = "PATHのみの調査では導入台帳を読まないため、導入元と導入版は未確認です。"
+		}
 		s.report.Commands = append(s.report.Commands, c)
 	}
 }
 
 func (s *scanner) resolveCandidate(c *Candidate, name string) {
 	path := c.Path
+	if s.report.Coverage.PathOnly() {
+		// 存在と通常ファイルであることだけを確認し、shim本文や導入情報は読まない。
+		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+			s.report.AddIssue("unavailable_command_target", "候補の実行ファイルを確認できませんでした。", path)
+			return
+		}
+		c.Resolution = "not_checked"
+		return
+	}
 	if _, err := physicalPath(path); err != nil {
 		s.report.AddIssue("unavailable_command_target", "候補の実行ファイルを確認できませんでした。", path)
 		return

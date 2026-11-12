@@ -110,7 +110,9 @@ function Invoke-Product([string[]] $Arguments, [int] $Code, [string] $Status = '
         $result.Json = ConvertFrom-Json -InputObject $result.Out -AsHashtable
         $report = $result.Json
         Assert-Condition ($report.status -ceq $Status -and $report.command -ceq $Arguments[0]) 'JSONの状態またはコマンド名が不正です。'
-        Assert-Condition ($report.schema_version -eq 1 -and $report.tool -ceq 'envfacts' -and $report.invocation_status -ceq 'not_tested') 'JSONの記録形式または未確認の扱いが不正です。'
+        $expectedSchema = 1
+        if ($Arguments[0] -ceq 'scan' -and $Arguments -contains '--path-only' -and $Code -ne 64) { $expectedSchema = 2 }
+        Assert-Condition ($report.schema_version -eq $expectedSchema -and $report.tool -ceq 'envfacts' -and $report.invocation_status -ceq 'not_tested') 'JSONの記録形式または未確認の扱いが不正です。'
         foreach ($command in $report.commands) {
             Assert-Condition ($command.invocation_status -ceq 'not_tested') '対象コマンドを起動確認済みとして扱っています。'
         }
@@ -206,6 +208,53 @@ try {
     $summaryOnly = Save-Record '比較に使えない表示用要約.json' $summary.Json
     Assert-Issue (Compare-Records $summaryOnly $summaryOnly 2 'incomplete') 'invalid_record'
 
+    $pathOnlyRecord = Join-Path $records 'PATH限定記録.json'
+    $pathOnly = Invoke-Product @('scan', '--path-only', '--command', 'alpha', '--json', '--output', $pathOnlyRecord) 0 'complete' $pathOnlyRecord
+    $pathAlpha = $pathOnly.Json.commands[0]
+    Assert-Condition ($pathOnly.Json.coverage.scan_mode -ceq 'path_only' -and $pathOnly.Json.coverage.scoop_roots.Count -eq 0 -and $pathOnly.Json.packages.Count -eq 0) 'PATH限定調査に導入台帳の情報が含まれています。'
+    Assert-Condition ($pathAlpha.candidates.Count -eq 3 -and $pathAlpha.preferred_path -ceq $alpha.preferred_path -and $null -eq $pathAlpha.actual_path -and $null -eq $pathAlpha.version -and $pathAlpha.package_ids.Count -eq 0 -and $pathAlpha.version_reason.Contains('導入台帳')) '限定調査で全候補または導入版未確認を失っています。'
+    foreach ($candidate in $pathAlpha.candidates) {
+        Assert-Condition ($candidate.resolution -ceq 'not_checked' -and $null -eq $candidate.actual_path -and $candidate.package_ids.Count -eq 0) '限定調査でshimの実体や導入元を推測しています。'
+    }
+    $pathSummaryRecord = Join-Path $records 'PATH限定の要約と詳細.json'
+    $pathSummary = Invoke-Product @('scan', '--path-only', '--command', 'alpha', '--json-summary', '--output', $pathSummaryRecord) 0 'complete' $pathSummaryRecord
+    Assert-Condition ($pathSummary.Json.coverage.scan_mode -ceq 'path_only' -and $pathSummary.Json.package_count -eq 0 -and ($pathSummary.Json.commands | ConvertTo-Json -Depth 50 -Compress) -ceq ($pathOnly.Json.commands | ConvertTo-Json -Depth 50 -Compress)) '限定調査の要約が範囲または全候補を失っています。'
+    $null = Compare-Records $pathOnlyRecord $pathSummaryRecord 0 'unchanged'
+    foreach ($pair in @(@($before, $pathOnlyRecord), @($pathOnlyRecord, $before))) {
+        $mixed = Compare-Records $pair[0] $pair[1] 2 'incomplete'
+        Assert-Issue $mixed 'coverage_mismatch'
+        Assert-Condition ($mixed.Json.changes.Count -eq 0 -and -not $mixed.Json.coverage.common.package_inventory_comparable) '全体調査と限定調査の違いをパッケージの削除や実体変更にしています。'
+    }
+    $null = Invoke-Product @('scan', '--path-only', '--command', 'missing', '--json') 1 'missing'
+    Assert-Issue (Invoke-Product @('scan', '--path-only', '--command', 'alpha', '--json', '--output', $pathOnlyRecord) 2 'incomplete') 'save_failed'
+    $pathHuman = Invoke-Product @('scan', '--path-only', '--command', 'alpha') 0
+    Assert-Condition ($pathHuman.Out.Contains('指定名のPATH確認のみ') -and $pathHuman.Out.Contains('対象外:') -and $pathHuman.Out.Contains('環境全体の調査は行っていません')) '限定調査の通常表示で未調査範囲が分かりません。'
+    $pathOriginal = $processEnvironment.PATH
+    $pathDenied = Join-Path $records 'PATHの列挙を拒否する項目'
+    Write-Fixture $pathDenied '模擬の読取拒否'
+    $pathLock = [IO.File]::Open($pathDenied, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
+    $lockedPath = $pathDenied
+    try {
+        # 共有拒否中の項目をPATHへ加え、実際の列挙失敗と名前不足の併存を作る。
+        $processEnvironment.PATH = $pathOriginal + ';' + $pathDenied
+        foreach ($format in @('--json', '--json-summary')) {
+            $unreadablePath = Invoke-Product @('scan', '--path-only', '--command', 'alpha', '--command', 'missing', $format) 2 'incomplete'
+            Assert-Issue $unreadablePath 'unreadable_search_path'
+            Assert-Condition (@($unreadablePath.Json.commands | Where-Object status -CEQ 'resolved').Count -eq 1 -and @($unreadablePath.Json.commands | Where-Object status -CEQ 'not_found').Count -eq 1) 'PATHの読取不能で既知の候補や名前不足を失っています。'
+        }
+    }
+    finally { $pathLock.Dispose(); $lockedPath = ''; $processEnvironment.PATH = $pathOriginal }
+    Assert-Condition ([IO.File]::ReadAllText($pathDenied) -ceq '模擬の読取拒否') 'PATHの読取拒否の確認で入力を変更しています。'
+    try {
+        $processEnvironment.PATH = (Join-Path $globalRoot 'shims') + ';' + $external + ';' + (Join-Path $userRoot 'shims')
+        $pathPriorityRecord = Join-Path $records 'PATH限定の優先順変更.json'
+        $null = Invoke-Product @('scan', '--path-only', '--command', 'alpha', '--json', '--output', $pathPriorityRecord) 0 'complete' $pathPriorityRecord
+        $pathPriority = Compare-Records $pathOnlyRecord $pathPriorityRecord 1 'changed'
+        Assert-Condition (@($pathPriority.Json.changes | Where-Object kind -CEQ 'priority_changed').Count -gt 0 -and @($pathPriority.Json.changes | Where-Object kind -CEQ 'actual_path_changed').Count -eq 0) '限定したPATHの優先順と対象外の実体比較を区別できません。'
+    }
+    finally { $processEnvironment.PATH = $pathOriginal }
+    Write-Output 'PATH限定調査: 全候補・優先順位・不足・読取不能・表示・要約・保存・共通範囲の比較を確認しました。'
+
     $missing = Invoke-Product @('scan', '--command', 'missing', '--json') 1 'missing'
     Assert-Condition ($missing.Json.commands[0].status -ceq 'not_found' -and $missing.Json.commands[0].package_ids.Count -eq 0) '未導入の名前の扱いが不正です。'
     $summaryMissing = Invoke-Product @('scan', '--command', 'missing', '--json-summary') 1 'missing'
@@ -234,6 +283,7 @@ try {
         $summaryLocked = Invoke-Product @('scan', '--command', 'alpha', '--command', 'missing', '--json-summary') 2 'incomplete'
         Assert-Issue $summaryLocked 'unreadable_manifest'
         Assert-Condition (($summaryLocked.Json.commands | ConvertTo-Json -Depth 50 -Compress) -ceq ($locked.Json.commands | ConvertTo-Json -Depth 50 -Compress)) '要約で読取拒否・名前不足と判明した結果を区別できません。'
+        $null = Invoke-Product @('scan', '--path-only', '--command', 'alpha', '--json') 0 'complete'
     }
     finally { $lockedFile.Dispose(); $lockedPath = '' }
     Assert-Condition ([IO.File]::ReadAllText($manifestPath) -ceq $originalManifest) '読取拒否の確認でマニフェストを変更しています。'
@@ -275,7 +325,7 @@ try {
     Assert-Issue $scope 'coverage_mismatch'
     Assert-Condition ($scope.Json.coverage.common.commands.Count -eq 1 -and $scope.Json.coverage.common.commands[0] -ceq 'alpha' -and $scope.Json.changes.Count -gt 0) '範囲違いで共通範囲または既知の変更を失っています。'
     $unsupported = ConvertFrom-Json -InputObject $initial.Out -AsHashtable
-    $unsupported.schema_version = 2
+    $unsupported.schema_version = 3
     $unsupportedPath = Save-Record '未対応版.json' $unsupported
     Assert-Issue (Compare-Records $before $unsupportedPath 2 'incomplete') 'unsupported_schema_version'
     $corruptPath = Join-Path $records '破損.json'
@@ -296,7 +346,7 @@ try {
     Assert-Condition ($overwrite.Json.commands[0].status -ceq 'not_found') '保存失敗で不足の事実を失っています。'
     $noParent = Join-Path $records '未作成/記録.json'
     Assert-Issue (Invoke-Product @('scan', '--json', '--output', $noParent) 2 'incomplete') 'save_failed'
-    foreach ($arguments in @(@('scan', '--command', '--json'), @('diff', '--before', $before, '--json'), @('scan', '--command', '--json-summary'), @('scan', '--json', '--json-summary'))) {
+    foreach ($arguments in @(@('scan', '--command', '--json'), @('diff', '--before', $before, '--json'), @('scan', '--command', '--json-summary'), @('scan', '--json', '--json-summary'), @('scan', '--path-only', '--json'), @('scan', '--path-only', '--json-summary'), @('scan', '--path-only', '--path-only', '--command', 'alpha', '--json'))) {
         $null = Invoke-Product $arguments 64 'invalid_arguments'
     }
     $invalid = Invoke-Product @('scan', '--unknown') 64
@@ -306,7 +356,7 @@ try {
     $humanDiff = Invoke-Product @('diff', '--before', $before, '--after', $after) 1
     Assert-Condition ($humanDiff.Out.Contains('比較: 差分あり') -and $humanDiff.Out.Contains('導入版変更')) '比較の日本語表示が不正です。'
     $help = Invoke-Product @('--help') 0
-    Assert-Condition ($help.Out.Contains('使い方:') -and $help.Out.Contains('envfacts scan') -and $help.Out.Contains('envfacts diff')) '使い方の表示が不正です。'
+    Assert-Condition ($help.Out.Contains('使い方:') -and $help.Out.Contains('envfacts scan') -and $help.Out.Contains('envfacts diff') -and $help.Out.Contains('--path-onlyには--commandが必須') -and $help.Out.Contains('限定記録（形式2）')) '使い方の表示が不正です。'
     $version = Invoke-Product @('--version') 0
     $versionSource = Get-Content -LiteralPath (Join-Path $projectRoot 'internal/cli/version.go') -Raw
     $versionMatch = [regex]::Match($versionSource, 'const Version = "([0-9]+\.[0-9]+\.[0-9]+)"')
@@ -329,6 +379,8 @@ try {
     Assert-Condition ($summaryAfter.Out.Length -le $summaryBefore.Out.Length + 128 -and $summaryAfter.Err.Length -le $summaryBefore.Err.Length + 32) '無関係なパッケージ数に比例して要約の出力が増えています。'
     Assert-Condition (-not ($summaryAfter.Out + $summaryAfter.Err).Contains('unrelated-')) '要約に無関係なパッケージの一覧があります。'
     Write-Output ('要約表示: 無関係なパッケージ100件の追加で標準出力 ' + [Text.Encoding]::UTF8.GetByteCount($summaryBefore.Out) + ' → ' + [Text.Encoding]::UTF8.GetByteCount($summaryAfter.Out) + 'バイト。全体の不完全・警告・名前解決結果を保持しました。')
+    $limitedAfter = Invoke-Product @('scan', '--path-only', '--command', 'alpha', '--json-summary') 0 'complete'
+    Assert-Condition ($limitedAfter.Json.package_count -eq 0 -and $limitedAfter.Json.issue_count -eq 0 -and ($limitedAfter.Json.commands | ConvertTo-Json -Depth 50 -Compress) -ceq ($pathSummary.Json.commands | ConvertTo-Json -Depth 50 -Compress)) '限定調査が無関係な破損パッケージの影響を受けています。'
 
     Assert-Condition ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash -ceq $binaryHash) '受入確認中に実行ファイルが変わりました。'
     Write-Output '受入条件5・9: 各操作前後の不変・対象の非実行・余分な値の非出力・保存・出力先・終了コード0/1/2/64を確認しました。'

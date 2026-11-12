@@ -2,7 +2,7 @@ package scan
 
 import "time"
 
-// Report は schema_version 1 の調査記録を表す。
+// Report は全体調査（形式1）とPATH限定調査（形式2）の記録を表す。
 type Report struct {
 	SchemaVersion    int       `json:"schema_version"`
 	Tool             string    `json:"tool"`
@@ -17,6 +17,7 @@ type Report struct {
 }
 
 type Coverage struct {
+	ScanMode          string       `json:"scan_mode,omitempty"`
 	ScoopRoots        []Root       `json:"scoop_roots"`
 	CommandSelection  string       `json:"command_selection"`
 	RequestedCommands []string     `json:"requested_commands"`
@@ -24,6 +25,9 @@ type Coverage struct {
 	Extensions        []string     `json:"extensions"`
 	Excluded          []string     `json:"excluded"`
 }
+
+// PathOnly は導入台帳と候補の実体を調べない限定範囲かを示す。
+func (c Coverage) PathOnly() bool { return c.ScanMode == "path_only" }
 
 type Root struct {
 	Scope  string `json:"scope"`
